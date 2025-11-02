@@ -76,12 +76,10 @@ export default async function handler(req, res) {
       },
       android: {
         notification: {
-          priority: 'max', // Changed from 'high' to 'max'
+          priority: 'high',
           sound: 'default',
           channelId: 'vasatey_alerts',
-          importance: 'high',
           visibility: 'public',
-          sticky: true, // Prevents swipe dismissal
         },
         priority: 'high',
         ttl: 3600000, // 1 hour TTL

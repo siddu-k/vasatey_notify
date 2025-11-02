@@ -44,7 +44,7 @@ export default async function handler(req, res) {
 
   try {
     // Validate request body
-    const { token, title, body, data = {}, userName } = req.body;
+    const { token, title, body, data = {}, userName, mobileNumber } = req.body;
 
     if (!token) {
       return res.status(400).json({ 
@@ -70,6 +70,7 @@ export default async function handler(req, res) {
       data: {
         ...data,
         userName: userName || 'Unknown User',
+        mobileNumber: mobileNumber || '',
         timestamp: new Date().toISOString(),
         source: 'vasatey-notify',
         click_action: 'FLUTTER_NOTIFICATION_CLICK', // For app opening
@@ -86,6 +87,7 @@ export default async function handler(req, res) {
         data: {
           ...data,
           userName: userName || 'Unknown User',
+          mobileNumber: mobileNumber || '',
           timestamp: new Date().toISOString(),
           source: 'vasatey-notify',
         }

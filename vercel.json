@@ -7,8 +7,20 @@
     },
     "api/health.js": {
       "maxDuration": 5
+    },
+    "api/cleanupAlerts.js": {
+      "maxDuration": 300
+    },
+    "api/cron/monthly-cleanup.js": {
+      "maxDuration": 300
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/monthly-cleanup",
+      "schedule": "0 2 1 * *"
+    }
+  ],
   "env": {
     "NODE_ENV": "production"
   }

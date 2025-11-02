@@ -1,5 +1,8 @@
 const admin = require('firebase-admin');
 
+// The channel ID must match the one created in your Android app
+const ANDROID_CHANNEL_ID = 'guardian_alert_channel';
+
 // Initialize Firebase Admin SDK if not already initialized
 if (!admin.apps.length) {
   try {
@@ -79,7 +82,7 @@ export default async function handler(req, res) {
         notification: {
           priority: 'high',
           sound: 'default',
-          channelId: 'vasatey_alerts',
+          channelId: ANDROID_CHANNEL_ID, // Use the defined channel ID
           visibility: 'public',
         },
         priority: 'high',

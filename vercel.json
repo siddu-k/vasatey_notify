@@ -1,22 +1,6 @@
 {
   "version": 2,
   "name": "vasatey-notify",
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/$1"
-    }
-  ],
   "functions": {
     "api/sendNotification.js": {
       "maxDuration": 10

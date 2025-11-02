@@ -1,0 +1,30 @@
+{
+  "name": "vasatey-notify",
+  "version": "1.0.0",
+  "description": "Serverless FCM gateway for Vasatey alert notifications",
+  "main": "api/sendNotification.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build step required'",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "fcm",
+    "firebase",
+    "notifications",
+    "vercel",
+    "serverless",
+    "vasatey"
+  ],
+  "author": "Vasatey Team",
+  "license": "MIT",
+  "dependencies": {
+    "firebase-admin": "^11.11.1"
+  },
+  "devDependencies": {
+    "vercel": "^32.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

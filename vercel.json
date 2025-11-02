@@ -4,6 +4,9 @@
   "functions": {
     "api/sendNotification.js": {
       "maxDuration": 10
+    },
+    "api/health.js": {
+      "maxDuration": 5
     }
   },
   "env": {

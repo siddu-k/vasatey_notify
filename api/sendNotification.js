@@ -1,19 +1,15 @@
 const admin = require('firebase-admin');
 
-// The channel ID must match the one created in your Android app
 const ANDROID_CHANNEL_ID = 'guardian_alert_channel';
 
 // Initialize Firebase Admin SDK if not already initialized
 if (!admin.apps.length) {
   try {
-    // Parse the Firebase service account key from environment variable
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
     });
   } catch (error) {
-    console.error('Failed to initialize Firebase Admin SDK:', error);
+    console.error('Firebase Admin Initialization Error:', error);
     throw new Error('Firebase configuration error');
   }
 }
@@ -46,8 +42,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Validate request body
-    const { token, title, body, data = {}, userName, username, email, mobileNumber, latitude, longitude } = req.body;
+    // Destructure all fields from the request body
+    const { token, title, body, username, email, mobileNumber, latitude, longitude } = req.body;
 
     if (!token) {
       return res.status(400).json({ 
@@ -56,14 +52,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Validate and format location data
-    const lat = latitude ? parseFloat(latitude) : null;
-    const lng = longitude ? parseFloat(longitude) : null;
-    const hasValidLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
-    
-    // Construct location string for body if available
-    const locationText = hasValidLocation ? ` (Location: ${lat.toFixed(6)}, ${lng.toFixed(6)})` : '';
-
     if (!title || !body) {
       return res.status(400).json({ 
         error: 'Missing required fields', 
@@ -71,65 +59,37 @@ export default async function handler(req, res) {
       });
     }
 
-    // Construct the FCM message
+    // Construct the FCM message - DATA ONLY (no notification object)
+    // Your Android app will handle creating the notification from data
     const message = {
       token: token,
-      notification: {
+      // THE 'notification' OBJECT IS REMOVED.
+      // All data, including what's visible, is now in the 'data' payload.
+      data: {
         title: title,
         body: body,
-      },
-      data: {
-        ...data,
-        userName: userName || username || 'Unknown User', // Support both userName and username
-        username: username || userName || 'Unknown User',
+        username: username || '',
         email: email || '',
         mobileNumber: mobileNumber || '',
-        latitude: hasValidLocation ? lat.toString() : '',
-        longitude: hasValidLocation ? lng.toString() : '',
-        location: hasValidLocation ? `${lat},${lng}` : '',
-        hasLocation: hasValidLocation.toString(),
+        latitude: String(latitude || ''),
+        longitude: String(longitude || ''),
         timestamp: new Date().toISOString(),
         source: 'vasatey-notify',
-        click_action: 'FLUTTER_NOTIFICATION_CLICK', // For app opening
+        alertType: 'emergency',
+        channelId: ANDROID_CHANNEL_ID,
       },
       android: {
-        notification: {
-          priority: 'high',
-          sound: 'default',
-          channelId: ANDROID_CHANNEL_ID, // Use the defined channel ID
-          visibility: 'public',
-        },
         priority: 'high',
-        ttl: 3600000, // 1 hour TTL
-        data: {
-          ...data,
-          userName: userName || username || 'Unknown User',
-          username: username || userName || 'Unknown User',
-          email: email || '',
-          mobileNumber: mobileNumber || '',
-          latitude: hasValidLocation ? lat.toString() : '',
-          longitude: hasValidLocation ? lng.toString() : '',
-          location: hasValidLocation ? `${lat},${lng}` : '',
-          hasLocation: hasValidLocation.toString(),
-          timestamp: new Date().toISOString(),
-          source: 'vasatey-notify',
-        }
       },
       apns: {
         payload: {
           aps: {
-            alert: {
-              title: title,
-              body: body,
-            },
-            sound: 'default',
-            badge: 1,
-            'content-available': 1, // Background processing
+            'content-available': 1, // Silent notification - app handles display
           },
         },
         headers: {
-          'apns-priority': '10', // Immediate delivery
-          'apns-push-type': 'alert',
+          'apns-priority': '5', // Background priority for data-only
+          'apns-push-type': 'background',
         },
       },
     };
@@ -137,17 +97,17 @@ export default async function handler(req, res) {
     // Send the notification
     const response = await admin.messaging().send(message);
     
-    console.log('Successfully sent message:', response);
+    console.log('Successfully sent data message:', response);
     
     return res.status(200).json({
       success: true,
-      message: 'Notification sent successfully',
+      message: 'Data message sent successfully',
       messageId: response,
       timestamp: new Date().toISOString(),
     });
 
   } catch (error) {
-    console.error('Error sending notification:', error);
+    console.error('Error sending message:', error);
     
     // Handle specific Firebase errors
     if (error.code === 'messaging/registration-token-not-registered') {
@@ -155,7 +115,7 @@ export default async function handler(req, res) {
         error: 'Token expired',
         message: 'The FCM token is not registered or has expired',
         code: error.code,
-        action: 'refresh_token', // Tell app to refresh token
+        action: 'refresh_token',
       });
     }
     

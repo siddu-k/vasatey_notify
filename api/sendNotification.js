@@ -47,7 +47,7 @@ export default async function handler(req, res) {
 
   try {
     // Validate request body
-    const { token, title, body, data = {}, userName, username, email, mobileNumber } = req.body;
+    const { token, title, body, data = {}, userName, username, email, mobileNumber, latitude, longitude } = req.body;
 
     if (!token) {
       return res.status(400).json({ 
@@ -55,6 +55,14 @@ export default async function handler(req, res) {
         message: 'FCM token is required' 
       });
     }
+
+    // Validate and format location data
+    const lat = latitude ? parseFloat(latitude) : null;
+    const lng = longitude ? parseFloat(longitude) : null;
+    const hasValidLocation = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
+    
+    // Construct location string for body if available
+    const locationText = hasValidLocation ? ` (Location: ${lat.toFixed(6)}, ${lng.toFixed(6)})` : '';
 
     if (!title || !body) {
       return res.status(400).json({ 
@@ -76,6 +84,10 @@ export default async function handler(req, res) {
         username: username || userName || 'Unknown User',
         email: email || '',
         mobileNumber: mobileNumber || '',
+        latitude: hasValidLocation ? lat.toString() : '',
+        longitude: hasValidLocation ? lng.toString() : '',
+        location: hasValidLocation ? `${lat},${lng}` : '',
+        hasLocation: hasValidLocation.toString(),
         timestamp: new Date().toISOString(),
         source: 'vasatey-notify',
         click_action: 'FLUTTER_NOTIFICATION_CLICK', // For app opening
@@ -95,6 +107,10 @@ export default async function handler(req, res) {
           username: username || userName || 'Unknown User',
           email: email || '',
           mobileNumber: mobileNumber || '',
+          latitude: hasValidLocation ? lat.toString() : '',
+          longitude: hasValidLocation ? lng.toString() : '',
+          location: hasValidLocation ? `${lat},${lng}` : '',
+          hasLocation: hasValidLocation.toString(),
           timestamp: new Date().toISOString(),
           source: 'vasatey-notify',
         }

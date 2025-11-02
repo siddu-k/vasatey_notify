@@ -44,7 +44,7 @@ export default async function handler(req, res) {
 
   try {
     // Validate request body
-    const { token, title, body, data = {} } = req.body;
+    const { token, title, body, data = {}, userName } = req.body;
 
     if (!token) {
       return res.status(400).json({ 
@@ -69,16 +69,28 @@ export default async function handler(req, res) {
       },
       data: {
         ...data,
+        userName: userName || 'Unknown User',
         timestamp: new Date().toISOString(),
         source: 'vasatey-notify',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK', // For app opening
       },
       android: {
         notification: {
-          priority: 'high',
+          priority: 'max', // Changed from 'high' to 'max'
           sound: 'default',
           channelId: 'vasatey_alerts',
+          importance: 'high',
+          visibility: 'public',
+          sticky: true, // Prevents swipe dismissal
         },
         priority: 'high',
+        ttl: 3600000, // 1 hour TTL
+        data: {
+          ...data,
+          userName: userName || 'Unknown User',
+          timestamp: new Date().toISOString(),
+          source: 'vasatey-notify',
+        }
       },
       apns: {
         payload: {
@@ -89,7 +101,12 @@ export default async function handler(req, res) {
             },
             sound: 'default',
             badge: 1,
+            'content-available': 1, // Background processing
           },
+        },
+        headers: {
+          'apns-priority': '10', // Immediate delivery
+          'apns-push-type': 'alert',
         },
       },
     };
@@ -111,10 +128,20 @@ export default async function handler(req, res) {
     
     // Handle specific Firebase errors
     if (error.code === 'messaging/registration-token-not-registered') {
-      return res.status(404).json({
-        error: 'Invalid token',
+      return res.status(410).json({
+        error: 'Token expired',
         message: 'The FCM token is not registered or has expired',
         code: error.code,
+        action: 'refresh_token', // Tell app to refresh token
+      });
+    }
+    
+    if (error.code === 'messaging/invalid-registration-token') {
+      return res.status(400).json({
+        error: 'Invalid token format',
+        message: 'The FCM token format is invalid',
+        code: error.code,
+        action: 'refresh_token',
       });
     }
     
@@ -123,6 +150,16 @@ export default async function handler(req, res) {
         error: 'Invalid argument',
         message: 'One or more arguments to the request are invalid',
         code: error.code,
+        details: error.message,
+      });
+    }
+
+    if (error.code === 'messaging/message-rate-exceeded') {
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        message: 'Message rate exceeded for this token',
+        code: error.code,
+        action: 'retry_later',
       });
     }
 
@@ -130,6 +167,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to send notification',
+      code: error.code || 'unknown',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }

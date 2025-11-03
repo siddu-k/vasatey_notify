@@ -23,29 +23,50 @@ const corsHeaders = {
 };
 
 export default async function handler(req, res) {
-  // Set CORS headers
-  Object.entries(corsHeaders).forEach(([key, value]) => {
-    res.setHeader(key, value);
-  });
-
-  // Handle preflight OPTIONS request
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  // Only allow POST requests
-  if (req.method !== 'POST') {
-    return res.status(405).json({ 
-      error: 'Method not allowed', 
-      message: 'Only POST requests are supported' 
+  try {
+    // Set CORS headers
+    Object.entries(corsHeaders).forEach(([key, value]) => {
+      res.setHeader(key, value);
     });
-  }
+
+    // Handle preflight OPTIONS request
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      return res.status(405).json({ 
+        error: 'Method not allowed', 
+        message: 'Only POST requests are supported' 
+      });
+    }
+
+    // Validate request body exists
+    if (!req.body || typeof req.body !== 'object') {
+      console.error('Invalid or missing request body');
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Request body must be a valid JSON object'
+      });
+    }
 
   try {
     // Destructure all fields from the request body
     const { token, title, body, fullName, email, phoneNumber, lastKnownLatitude, lastKnownLongitude } = req.body;
 
+    // Log incoming request for debugging
+    console.log('Incoming request:', {
+      hasToken: !!token,
+      tokenPrefix: token ? token.substring(0, 20) + '...' : 'null',
+      title: title,
+      body: body,
+      fullName: fullName,
+      timestamp: new Date().toISOString()
+    });
+
     if (!token) {
+      console.error('Missing FCM token in request');
       return res.status(400).json({ 
         error: 'Missing required field', 
         message: 'FCM token is required' 
@@ -53,6 +74,7 @@ export default async function handler(req, res) {
     }
 
     if (!title || !body) {
+      console.error('Missing title or body in request', { title: !!title, body: !!body });
       return res.status(400).json({ 
         error: 'Missing required fields', 
         message: 'Both title and body are required' 
@@ -95,6 +117,7 @@ export default async function handler(req, res) {
     };
 
     // Send the notification
+    console.log('Sending FCM message to token:', token.substring(0, 20) + '...');
     const response = await admin.messaging().send(message);
     
     console.log('Successfully sent data message:', response);
@@ -107,17 +130,19 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
+    const tokenPrefix = req.body?.token ? req.body.token.substring(0, 20) + '...' : 'null';
     console.error('Error sending message:', error);
     console.error('Full error details:', {
       code: error.code,
       message: error.message,
-      token: token ? `${token.substring(0, 20)}...` : 'null',
-      timestamp: new Date().toISOString()
+      token: tokenPrefix,
+      timestamp: new Date().toISOString(),
+      stack: error.stack
     });
     
     // Handle specific Firebase errors
     if (error.code === 'messaging/registration-token-not-registered') {
-      console.log(`Token not registered: ${token ? token.substring(0, 20) + '...' : 'null'}`);
+      console.log(`Token not registered: ${tokenPrefix}`);
       return res.status(410).json({
         error: 'Token expired',
         message: 'The FCM token is not registered or has expired. Please refresh your app to get a new token.',
@@ -128,7 +153,7 @@ export default async function handler(req, res) {
     }
     
     if (error.code === 'messaging/invalid-registration-token') {
-      console.log(`Invalid token format: ${token ? token.substring(0, 20) + '...' : 'null'}`);
+      console.log(`Invalid token format: ${tokenPrefix}`);
       return res.status(400).json({
         error: 'Invalid token format',
         message: 'The FCM token format is invalid. Please refresh your app to get a valid token.',

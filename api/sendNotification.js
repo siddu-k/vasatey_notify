@@ -42,8 +42,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Destructure all fields from the request body
-    const { token, title, body, username, email, mobileNumber, latitude, longitude } = req.body;
+    // Destructure all fields from the request body to match Android Models.kt UserProfile
+    const { token, title, body, fullName, email, phoneNumber, lastKnownLatitude, lastKnownLongitude } = req.body;
 
     if (!token) {
       return res.status(400).json({ 
@@ -68,11 +68,11 @@ export default async function handler(req, res) {
       data: {
         title: title,
         body: body,
-        username: username || '',
+        fullName: fullName || '',
         email: email || '',
-        mobileNumber: mobileNumber || '',
-        latitude: String(latitude || ''),
-        longitude: String(longitude || ''),
+        phoneNumber: phoneNumber || '',
+        lastKnownLatitude: String(lastKnownLatitude || ''),
+        lastKnownLongitude: String(lastKnownLongitude || ''),
         timestamp: new Date().toISOString(),
         source: 'vasatey-notify',
         alertType: 'emergency',

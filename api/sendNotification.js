@@ -189,4 +189,13 @@ export default async function handler(req, res) {
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
+
+  } catch (outerError) {
+    console.error('Critical function error:', outerError);
+    return res.status(500).json({
+      error: 'Function execution failed',
+      message: 'A critical error occurred while processing the request',
+      details: process.env.NODE_ENV === 'development' ? outerError.message : undefined,
+    });
+  }
 }

@@ -1,7 +1,8 @@
-// vercel_app_endpoint.js
-const { createClient } = require('@supabase/supabase-js');
+// api/sendNotification.js
+import { createClient } from '@supabase/supabase-js';
+import * as admin from 'firebase-admin';
 
-// Initialize Supabase client with your credentials
+// Initialize Supabase
 const supabase = createClient(
   'https://hjxmjmdqvgiaeourpbbc.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqeG1qbWRxdmdpYWVvdXJwYmJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMzg5NjEsImV4cCI6MjA3NzcxNDk2MX0.mVibzZbffS1JfCVa7yW8yndG_e7iYI72vgo_9h3SCiQ',
@@ -13,147 +14,125 @@ const supabase = createClient(
   }
 );
 
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Max-Age': '86400',
-  'Content-Type': 'application/json'
-};
+// Initialize Firebase Admin
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
-// Helper function to send response
-const sendResponse = (res, statusCode, data) => {
-  return res.status(statusCode).json({
-    ...data,
-    timestamp: new Date().toISOString()
-  });
-};
-
-// Main handler
 export default async function handler(req, res) {
-  // Set CORS headers
-  Object.entries(corsHeaders).forEach(([key, value]) => {
-    res.setHeader(key, value);
-  });
-
-  // Handle preflight OPTIONS request
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
   // Only allow POST requests
   if (req.method !== 'POST') {
-    return sendResponse(res, 405, {
-      success: false,
-      error: 'Method not allowed',
-      message: 'Only POST requests are supported'
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { 
-      token, 
-      title, 
-      body, 
-      fullName, 
-      email, 
-      phoneNumber, 
-      lastKnownLatitude, 
-      lastKnownLongitude,
-      isSelfAlert = false
-    } = req.body;
+    const { token, title, body, fullName, email, phoneNumber, lastKnownLatitude, lastKnownLongitude, isSelfAlert } = req.body;
 
     // Validate required fields
-    const requiredFields = { token, title, body, fullName, email };
-    const missingFields = Object.entries(requiredFields)
-      .filter(([_, value]) => !value)
-      .map(([key]) => key);
-
-    if (missingFields.length > 0) {
-      return sendResponse(res, 400, {
-        success: false,
+    if (!token || !title || !body || !email) {
+      return res.status(400).json({ 
         error: 'Missing required fields',
-        missingFields,
-        message: `The following fields are required: ${missingFields.join(', ')}`
+        required: ['token', 'title', 'body', 'email']
       });
     }
 
-    // Log the notification in Supabase
-    const { data: notification, error: insertError } = await supabase
-      .from('notifications')
-      .insert([{
-        recipient_email: email,
-        title,
-        body,
-        fcm_token: token,
-        status: 'sending',
-        metadata: {
-          fullName,
-          phoneNumber: phoneNumber || null,
-          lastKnownLatitude: lastKnownLatitude || null,
-          lastKnownLongitude: lastKnownLongitude || null,
-          isSelfAlert
+    // Send FCM notification
+    try {
+      const message = {
+        token: token,
+        notification: {
+          title: title,
+          body: body
+        },
+        data: {
+          fullName: fullName || '',
+          email: email,
+          phoneNumber: phoneNumber || '',
+          lastKnownLatitude: lastKnownLatitude ? String(lastKnownLatitude) : '',
+          lastKnownLongitude: lastKnownLongitude ? String(lastKnownLongitude) : '',
+          isSelfAlert: String(isSelfAlert || false)
         }
-      }])
-      .select()
-      .single();
+      };
 
-    if (insertError) {
-      console.error('Supabase insert error:', insertError);
-      throw new Error('Failed to save notification to database');
+      // Send the message
+      const response = await admin.messaging().send(message);
+      
+      // Log the notification in Supabase
+      const { data, error } = await supabase
+        .from('notifications')
+        .insert([{
+          recipient_email: email,
+          title: title,
+          body: body,
+          fcm_token: token,
+          status: 'sent',
+          metadata: {
+            fullName,
+            phoneNumber,
+            lastKnownLatitude,
+            lastKnownLongitude,
+            isSelfAlert
+          }
+        }])
+        .select();
+
+      if (error) {
+        console.error('Supabase insert error:', error);
+        // Don't fail the request if Supabase insert fails
+      }
+
+      return res.status(200).json({ 
+        success: true,
+        messageId: response,
+        notification: data ? data[0] : null
+      });
+
+    } catch (error) {
+      console.error('FCM error:', error);
+      
+      // Log the failed attempt in Supabase
+      try {
+        await supabase
+          .from('notifications')
+          .insert([{
+            recipient_email: email,
+            title: title,
+            body: body,
+            fcm_token: token,
+            status: 'failed',
+            error: error.message,
+            metadata: {
+              fullName,
+              phoneNumber,
+              lastKnownLatitude,
+              lastKnownLongitude,
+              isSelfAlert
+            }
+          }]);
+      } catch (dbError) {
+        console.error('Failed to log failed notification:', dbError);
+      }
+
+      return res.status(500).json({ 
+        success: false,
+        error: error.message || 'Failed to send notification'
+      });
     }
-
-    // Update notification status to sent
-    const { error: updateError } = await supabase
-      .from('notifications')
-      .update({ 
-        status: 'sent',
-        sent_at: new Date().toISOString()
-      })
-      .eq('id', notification.id);
-
-    if (updateError) {
-      console.error('Supabase update error:', updateError);
-      // Continue even if status update fails
-    }
-
-    return sendResponse(res, 200, {
-      success: true,
-      message: 'Notification processed successfully',
-      notificationId: notification.id
-    });
 
   } catch (error) {
     console.error('Server error:', error);
-    return sendResponse(res, 500, {
+    return res.status(500).json({ 
       success: false,
-      error: 'Internal server error',
-      message: error.message || 'An unknown error occurred'
+      error: 'Internal server error'
     });
   }
 }
 
-// Health check endpoint
-export async function healthCheck(req, res) {
-  try {
-    // Test Supabase connection
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('count', { count: 'exact', head: true });
-
-    if (error) throw error;
-
-    return sendResponse(res, 200, {
-      status: 'ok',
-      database: 'connected',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    return sendResponse(res, 500, {
-      status: 'error',
-      database: 'disconnected',
-      error: error.message
-    });
-  }
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '1mb',
+    },
+  },
 }

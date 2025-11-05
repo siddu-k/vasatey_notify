@@ -3,12 +3,25 @@
   "name": "vasatey-notify",
   "functions": {
     "api/sendNotification.js": {
-      "maxDuration": 10
-    },
-    "api/health.js": {
-      "maxDuration": 5
+      "maxDuration": 10,
+      "memory": 1024
     }
   },
+  "routes": [
+    {
+      "src": "/api/send",
+      "dest": "/api/sendNotification"
+    },
+    {
+      "src": "/api/sendNotification",
+      "methods": ["POST", "OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    }
+  ],
   "env": {
     "NODE_ENV": "production"
   }

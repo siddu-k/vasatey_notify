@@ -19,6 +19,7 @@
   "author": "Vasatey Team",
   "license": "MIT",
   "dependencies": {
+    "@supabase/supabase-js": "^2.79.0",
     "firebase-admin": "^11.11.1"
   },
   "devDependencies": {

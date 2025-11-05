@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { createClient } = require('@supabase/supabase-js');
 
 const ANDROID_CHANNEL_ID = 'guardian_alert_channel';
 
@@ -14,7 +15,19 @@ if (!admin.apps.length) {
   }
 }
 
-// CORS headers for cross-origin requests
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
+
+// CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -23,70 +36,79 @@ const corsHeaders = {
 };
 
 export default async function handler(req, res) {
-  try {
-    // Set CORS headers
-    Object.entries(corsHeaders).forEach(([key, value]) => {
-      res.setHeader(key, value);
+  // Set CORS headers
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    res.setHeader(key, value);
+  });
+
+  // Handle preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ 
+      error: 'Method not allowed', 
+      message: 'Only POST requests are supported' 
     });
+  }
 
-    // Handle preflight OPTIONS request
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-    }
+  try {
+    const { 
+      token, 
+      title, 
+      body, 
+      fullName, 
+      email, 
+      phoneNumber, 
+      lastKnownLatitude, 
+      lastKnownLongitude,
+      isSelfAlert = false
+    } = req.body;
 
-    // Only allow POST requests
-    if (req.method !== 'POST') {
-      return res.status(405).json({ 
-        error: 'Method not allowed', 
-        message: 'Only POST requests are supported' 
-      });
-    }
+    // Validate required fields
+    const requiredFields = { token, title, body, fullName, email };
+    const missingFields = Object.entries(requiredFields)
+      .filter(([_, value]) => !value)
+      .map(([key]) => key);
 
-    // Validate request body exists
-    if (!req.body || typeof req.body !== 'object') {
-      console.error('Invalid or missing request body');
+    if (missingFields.length > 0) {
       return res.status(400).json({
-        error: 'Invalid request',
-        message: 'Request body must be a valid JSON object'
+        error: 'Missing required fields',
+        missingFields,
+        message: `The following fields are required: ${missingFields.join(', ')}`
       });
     }
 
-  try {
-    // Destructure all fields from the request body
-    const { token, title, body, fullName, email, phoneNumber, lastKnownLatitude, lastKnownLongitude } = req.body;
+    // Log the notification in Supabase
+    const { data: notification, error: insertError } = await supabase
+      .from('notifications')
+      .insert([{
+        recipient_email: email,
+        title,
+        body,
+        fcm_token: token,
+        status: 'sending',
+        metadata: {
+          fullName,
+          phoneNumber: phoneNumber || null,
+          lastKnownLatitude: lastKnownLatitude || null,
+          lastKnownLongitude: lastKnownLongitude || null,
+          isSelfAlert
+        }
+      }])
+      .select()
+      .single();
 
-    // Log incoming request for debugging
-    console.log('Incoming request:', {
-      hasToken: !!token,
-      tokenPrefix: token ? token.substring(0, 20) + '...' : 'null',
-      title: title,
-      body: body,
-      fullName: fullName,
-      timestamp: new Date().toISOString()
-    });
-
-    if (!token) {
-      console.error('Missing FCM token in request');
-      return res.status(400).json({ 
-        error: 'Missing required field', 
-        message: 'FCM token is required' 
-      });
+    if (insertError) {
+      console.error('Error saving notification to Supabase:', insertError);
+      throw new Error('Failed to save notification');
     }
 
-    if (!title || !body) {
-      console.error('Missing title or body in request', { title: !!title, body: !!body });
-      return res.status(400).json({ 
-        error: 'Missing required fields', 
-        message: 'Both title and body are required' 
-      });
-    }
-
-    // Construct the FCM message - DATA ONLY (no notification object)
-    // Your Android app will handle creating the notification from data
+    // Construct the FCM message
     const message = {
       token: token,
-      // THE 'notification' OBJECT IS REMOVED.
-      // All data, including what's visible, is now in the 'data' payload.
       data: {
         title: title,
         body: body,
@@ -99,6 +121,7 @@ export default async function handler(req, res) {
         source: 'vasatey-notify',
         alertType: 'emergency',
         channelId: ANDROID_CHANNEL_ID,
+        isSelfAlert: String(isSelfAlert)
       },
       android: {
         priority: 'high',
@@ -106,69 +129,77 @@ export default async function handler(req, res) {
       apns: {
         payload: {
           aps: {
-            'content-available': 1, // Silent notification - app handles display
+            'content-available': 1,
           },
         },
         headers: {
-          'apns-priority': '5', // Background priority for data-only
+          'apns-priority': '5',
           'apns-push-type': 'background',
         },
       },
     };
 
-    // Send the notification
+    // Send FCM notification
     console.log('Sending FCM message to token:', token.substring(0, 20) + '...');
     const response = await admin.messaging().send(message);
-    
-    console.log('Successfully sent data message:', response);
-    
+    console.log('Successfully sent FCM message:', response);
+
+    // Update notification status to sent
+    const { error: updateError } = await supabase
+      .from('notifications')
+      .update({ 
+        status: 'sent',
+        sent_at: new Date().toISOString()
+      })
+      .eq('id', notification.id);
+
+    if (updateError) {
+      console.error('Error updating notification status:', updateError);
+      // Continue even if status update fails
+    }
+
     return res.status(200).json({
       success: true,
-      message: 'Data message sent successfully',
-      messageId: response,
-      timestamp: new Date().toISOString(),
+      message: 'Notification processed successfully',
+      notificationId: notification.id,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    const tokenPrefix = req.body?.token ? req.body.token.substring(0, 20) + '...' : 'null';
-    console.error('Error sending message:', error);
-    console.error('Full error details:', {
-      code: error.code,
-      message: error.message,
-      token: tokenPrefix,
-      timestamp: new Date().toISOString(),
-      stack: error.stack
-    });
+    console.error('Error processing notification:', error);
     
+    // If we have a notification ID, update its status to failed
+    if (notification?.id) {
+      const { error: updateError } = await supabase
+        .from('notifications')
+        .update({ 
+          status: 'failed',
+          error_message: error.message || 'An unknown error occurred',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', notification.id);
+
+      if (updateError) {
+        console.error('Error updating notification failure status:', updateError);
+      }
+    }
+
     // Handle specific Firebase errors
     if (error.code === 'messaging/registration-token-not-registered') {
-      console.log(`Token not registered: ${tokenPrefix}`);
       return res.status(410).json({
         error: 'Token expired',
-        message: 'The FCM token is not registered or has expired. Please refresh your app to get a new token.',
+        message: 'The FCM token is not registered or has expired',
         code: error.code,
-        action: 'refresh_token',
-        details: 'This token has been invalidated and should be refreshed by the app'
+        action: 'refresh_token'
       });
     }
-    
+
     if (error.code === 'messaging/invalid-registration-token') {
-      console.log(`Invalid token format: ${tokenPrefix}`);
       return res.status(400).json({
         error: 'Invalid token format',
-        message: 'The FCM token format is invalid. Please refresh your app to get a valid token.',
+        message: 'The FCM token format is invalid',
         code: error.code,
-        action: 'refresh_token',
-        details: 'Token format is malformed'
-      });
-    }
-    
-    if (error.code === 'messaging/invalid-argument') {
-      return res.status(400).json({
-        error: 'Invalid argument',
-        message: 'One or more arguments to the request are invalid',
-        code: error.code,
-        details: error.message,
+        action: 'refresh_token'
       });
     }
 
@@ -177,25 +208,15 @@ export default async function handler(req, res) {
         error: 'Rate limit exceeded',
         message: 'Message rate exceeded for this token',
         code: error.code,
-        action: 'retry_later',
+        action: 'retry_later'
       });
     }
-
-    // Generic error response
+    
     return res.status(500).json({
       error: 'Internal server error',
-      message: 'Failed to send notification',
+      message: error.message || 'An unknown error occurred',
       code: error.code || 'unknown',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
-    });
-  }
-
-  } catch (outerError) {
-    console.error('Critical function error:', outerError);
-    return res.status(500).json({
-      error: 'Function execution failed',
-      message: 'A critical error occurred while processing the request',
-      details: process.env.NODE_ENV === 'development' ? outerError.message : undefined,
+      timestamp: new Date().toISOString()
     });
   }
 }

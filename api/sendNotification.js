@@ -50,28 +50,23 @@ export default async function handler(req, res) {
     console.log(`Sending notification to ${email}`);
     console.log(`Location: ${lastKnownLatitude}, ${lastKnownLongitude}`);
 
-    // Send FCM notification
+    // Send FCM notification with ONLY data payload
+    // This ensures our app code handles the notification in both open and closed states
     const message = {
       token: token,
-      notification: {
-        title: title,
-        body: body
-      },
+      // REMOVED notification payload - only send data
       data: {
+        title: title || '',
+        body: body || '',
         email: email || '',
         fullName: fullName || '',
         phoneNumber: phoneNumber || '',
-        latitude: lastKnownLatitude ? String(lastKnownLatitude) : '',
-        longitude: lastKnownLongitude ? String(lastKnownLongitude) : '',
+        lastKnownLatitude: lastKnownLatitude ? String(lastKnownLatitude) : '',
+        lastKnownLongitude: lastKnownLongitude ? String(lastKnownLongitude) : '',
         isSelfAlert: String(isSelfAlert || false)
       },
       android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          priority: 'high',
-          channelId: 'emergency_alerts'
-        }
+        priority: 'high'
       }
     };
 

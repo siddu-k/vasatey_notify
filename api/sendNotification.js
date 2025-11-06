@@ -30,7 +30,9 @@ export default async function handler(req, res) {
       fullName,
       phoneNumber,
       lastKnownLatitude,
-      lastKnownLongitude
+      lastKnownLongitude,
+      frontPhotoUrl,
+      backPhotoUrl
     } = req.body;
 
     // Validate required fields
@@ -47,8 +49,25 @@ export default async function handler(req, res) {
       });
     }
 
+    // LOG EVERYTHING for debugging
+    console.log(`========================================`);
     console.log(`Sending notification to ${email}`);
-    console.log(`Location: ${lastKnownLatitude}, ${lastKnownLongitude}`);
+    console.log(`Location received: lat=${lastKnownLatitude}, lon=${lastKnownLongitude}`);
+    console.log(`Photo URLs: front=${frontPhotoUrl}, back=${backPhotoUrl}`);
+    console.log(`Full request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`========================================`);
+
+    // Convert location to string, handle null/undefined properly
+    const latStr = (lastKnownLatitude !== null && lastKnownLatitude !== undefined) 
+      ? String(lastKnownLatitude) 
+      : '';
+    const lonStr = (lastKnownLongitude !== null && lastKnownLongitude !== undefined) 
+      ? String(lastKnownLongitude) 
+      : '';
+    const frontPhoto = frontPhotoUrl || '';
+    const backPhoto = backPhotoUrl || '';
+
+    console.log(`Converted strings: lat='${latStr}', lon='${lonStr}', front='${frontPhoto}', back='${backPhoto}'`);
 
     // Send FCM notification with ONLY data payload
     // This ensures our app code handles the notification in both open and closed states
@@ -61,8 +80,10 @@ export default async function handler(req, res) {
         email: email || '',
         fullName: fullName || '',
         phoneNumber: phoneNumber || '',
-        lastKnownLatitude: lastKnownLatitude ? String(lastKnownLatitude) : '',
-        lastKnownLongitude: lastKnownLongitude ? String(lastKnownLongitude) : '',
+        lastKnownLatitude: latStr,
+        lastKnownLongitude: lonStr,
+        frontPhotoUrl: frontPhoto,
+        backPhotoUrl: backPhoto,
         isSelfAlert: String(isSelfAlert || false)
       },
       android: {
@@ -70,13 +91,23 @@ export default async function handler(req, res) {
       }
     };
 
+    console.log('FCM message data being sent:', JSON.stringify(message.data, null, 2));
+
     const response = await admin.messaging().send(message);
     console.log('FCM notification sent successfully:', response);
     
     return res.status(200).json({ 
       success: true,
       messageId: response,
-      recipient: email
+      recipient: email,
+      locationSent: {
+        latitude: latStr,
+        longitude: lonStr
+      },
+      photosSent: {
+        front: frontPhoto,
+        back: backPhoto
+      }
     });
 
   } catch (error) {

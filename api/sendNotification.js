@@ -32,7 +32,8 @@ export default async function handler(req, res) {
       lastKnownLatitude,
       lastKnownLongitude,
       frontPhotoUrl,
-      backPhotoUrl
+      backPhotoUrl,
+      alertId  // ✅ ADD THIS - IMPORTANT!
     } = req.body;
 
     // Validate required fields
@@ -52,6 +53,7 @@ export default async function handler(req, res) {
     // LOG EVERYTHING for debugging
     console.log(`========================================`);
     console.log(`Sending notification to ${email}`);
+    console.log(`Alert ID: ${alertId}`);  // ✅ ADD THIS LOG
     console.log(`Location received: lat=${lastKnownLatitude}, lon=${lastKnownLongitude}`);
     console.log(`Photo URLs: front=${frontPhotoUrl}, back=${backPhotoUrl}`);
     console.log(`Full request body:`, JSON.stringify(req.body, null, 2));
@@ -84,7 +86,8 @@ export default async function handler(req, res) {
         lastKnownLongitude: lonStr,
         frontPhotoUrl: frontPhoto,
         backPhotoUrl: backPhoto,
-        isSelfAlert: String(isSelfAlert || false)
+        isSelfAlert: String(isSelfAlert || false),
+        alertId: alertId || ''  // ✅ ADD THIS - CRITICAL FOR CONFIRMATION!
       },
       android: {
         priority: 'high'
@@ -100,6 +103,7 @@ export default async function handler(req, res) {
       success: true,
       messageId: response,
       recipient: email,
+      alertId: alertId,  // ✅ ADD THIS TO RESPONSE
       locationSent: {
         latitude: latStr,
         longitude: lonStr
